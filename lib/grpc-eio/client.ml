@@ -1,9 +1,11 @@
 type response_handler = H2.Client_connection.response_handler
+type error_handler = H2.Client_connection.error_handler
 
 type do_request =
   ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
+  error_handler:error_handler ->
   response_handler:response_handler ->
   H2.Body.Writer.t
 
@@ -31,26 +33,39 @@ let make_trailers_handler () =
   in
   (status, trailers_handler)
 
+type error = ResponseError of H2.Status.t | ConnectionError of H2.Client_connection.error
+
 let get_response_and_bodies request =
   let response, response_notify = Eio.Promise.create () in
   let read_body, read_body_notify = Eio.Promise.create () in
-  let response_handler response body =
-    Eio.Promise.resolve response_notify response;
-    Eio.Promise.resolve read_body_notify body
+  let response_handler res body =
+    if not (Eio.Promise.is_resolved response) 
+      then Eio.Promise.resolve_ok response_notify res;
+    if not (Eio.Promise.is_resolved read_body) 
+      then Eio.Promise.resolve_ok read_body_notify body;
   in
-  let write_body = request ~response_handler in
+  let error_handler error =
+    if not (Eio.Promise.is_resolved response) 
+      then Eio.Promise.resolve_error response_notify (ConnectionError error);
+    if not (Eio.Promise.is_resolved read_body) 
+      then Eio.Promise.resolve_error read_body_notify (ConnectionError error)
+  in
+  let write_body = request ~error_handler ~response_handler in
   let response = Eio.Promise.await response in
+  Result.bind response @@ fun response ->
   let read_body = Eio.Promise.await read_body in
-  (response, read_body, write_body)
+  Result.bind read_body @@ fun read_body ->
+  Ok(response, read_body, write_body)
 
 let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     ?(headers = default_headers) () =
   let request = make_request ~service ~rpc ~scheme ~headers in
   let status, trailers_handler = make_trailers_handler () in
-  let response, read_body, write_body =
+  let response =
     get_response_and_bodies
       (do_request ~flush_headers_immediately:true request ~trailers_handler)
   in
+  Result.bind response @@ fun (response, read_body, write_body) ->
   match response.status with
   | `OK ->
       trailers_handler response.headers;
@@ -58,13 +73,15 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
       let status =
         match Eio.Promise.is_resolved status with
         (* In case no grpc-status appears in headers or trailers. *)
-        | true -> Eio.Promise.await status
+        | true -> 
+            Eio.traceln "waiting on status";
+            Eio.Promise.await status
         | false ->
             Grpc.Status.v ~message:"Server did not return grpc-status"
               Grpc.Status.Unknown
       in
       Ok (result, status)
-  | error_status -> Error error_status
+  | error_status -> Error (ResponseError error_status)
 
 module Rpc = struct
   type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t -> 'a
