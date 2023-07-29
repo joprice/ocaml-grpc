@@ -25,14 +25,18 @@ module Rpc : sig
 end
 
 type response_handler = H2.Client_connection.response_handler
+type error_handler = H2.Client_connection.error_handler
 
 type do_request =
   ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
+  error_handler:error_handler ->
   response_handler:response_handler ->
   H2.Body.Writer.t
 (** [do_request] is the type of a function that performs the request *)
+
+type error = ResponseError of H2.Status.t | ConnectionError of H2.Client_connection.error
 
 val call :
   service:string ->
@@ -42,7 +46,7 @@ val call :
   do_request:do_request ->
   ?headers:H2.Headers.t ->
   unit ->
-  ('a * Grpc.Status.t, H2.Status.t) result
+  ('a * Grpc.Status.t, error) result
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given
         by [service] and [rpc] using the [do_request] function. The [handler] is
         called when this request is set up to send and receive data. *)
