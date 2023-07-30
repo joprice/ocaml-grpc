@@ -73,9 +73,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
       let status =
         match Eio.Promise.is_resolved status with
         (* In case no grpc-status appears in headers or trailers. *)
-        | true -> 
-            Eio.traceln "waiting on status";
-            Eio.Promise.await status
+        | true -> Eio.Promise.await status
         | false ->
             Grpc.Status.v ~message:"Server did not return grpc-status"
               Grpc.Status.Unknown
