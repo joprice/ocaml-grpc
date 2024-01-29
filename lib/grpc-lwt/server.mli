@@ -23,17 +23,19 @@ module Rpc : sig
 
   (** [t] represents the types of rpcs available in gRPC. *)
 
-  val unary : f:unary -> H2.Reqd.t -> unit Lwt.t
+  val unary : f:unary -> H2.Reqd.t -> Grpc.Message.decoder -> unit Lwt.t
   (** [unary ~f reqd] calls [f] with the request obtained from [reqd] and handles sending the response. *)
 
-  val client_streaming : f:client_streaming -> H2.Reqd.t -> unit Lwt.t
+  val client_streaming :
+    f:client_streaming -> H2.Reqd.t -> Grpc.Message.decoder -> unit Lwt.t
   (** [client_streaming ~f reqd] calls [f] with a stream to pull requests from and handles sending the response. *)
 
-  val server_streaming : f:server_streaming -> H2.Reqd.t -> unit Lwt.t
+  val server_streaming :
+    f:server_streaming -> H2.Reqd.t -> Grpc.Message.decoder -> unit Lwt.t
   (** [server_streaming ~f reqd] calls [f] with the request optained from [reqd] and handles sending the responses pushed out. *)
 
   val bidirectional_streaming :
-    f:bidirectional_streaming -> H2.Reqd.t -> unit Lwt.t
+    f:bidirectional_streaming -> H2.Reqd.t -> Grpc.Message.decoder -> unit Lwt.t
   (** [bidirectional_streaming ~f reqd] calls [f] with a stream to pull requests from and andles sending the responses pushed out. *)
 end
 
@@ -47,6 +49,6 @@ module Service : sig
   val add_rpc : name:string -> rpc:Rpc.t -> t -> t
   (** [add_rpc ~name ~rpc t] adds [rpc] to [t] and ensures that [t] can route to it with [name]. *)
 
-  val handle_request : t -> H2.Reqd.t -> unit
+  val handle_request : t -> H2.Reqd.t -> Grpc.Message.decoder -> unit
   (** [handle_request t reqd] handles routing [reqd] to the correct rpc if available in [t]. *)
 end

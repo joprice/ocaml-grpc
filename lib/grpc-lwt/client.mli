@@ -1,5 +1,9 @@
 module Rpc : sig
-  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t Lwt.t -> 'a Lwt.t
+  type 'a handler =
+    H2.Body.Writer.t ->
+    H2.Body.Reader.t Lwt.t ->
+    Grpc.Message.decoder ->
+    'a Lwt.t
 
   val bidirectional_streaming :
     f:((string option -> unit) -> string Lwt_stream.t -> 'a Lwt.t) -> 'a handler
@@ -42,6 +46,7 @@ val call :
   handler:'a Rpc.handler ->
   do_request:do_request ->
   ?headers:H2.Headers.t ->
+  codec:Grpc.Message.codec ->
   unit ->
   ('a * Grpc.Status.t, H2.Status.t) result Lwt.t
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given

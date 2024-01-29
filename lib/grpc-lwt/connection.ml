@@ -1,12 +1,14 @@
 open Lwt.Syntax
 
-let grpc_recv_streaming body buffer_push =
+let grpc_recv_streaming body buffer_push decoder =
   let request_buffer = Grpc.Buffer.v () in
   let on_eof () = buffer_push None in
   let rec on_read buffer ~off ~len =
     Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
       ~dst:request_buffer ~length:len;
-    Grpc.Message.extract_all (fun msg -> buffer_push (Some msg)) request_buffer;
+    Grpc.Message.extract_all
+      (fun msg -> buffer_push (Some msg))
+      request_buffer decoder;
     H2.Body.Reader.schedule_read body ~on_read ~on_eof
   in
   H2.Body.Reader.schedule_read body ~on_read ~on_eof
