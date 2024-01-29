@@ -1,5 +1,6 @@
 module Rpc : sig
-  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t -> 'a
+  type 'a handler =
+    H2.Body.Writer.t -> H2.Body.Reader.t -> Grpc.Message.decoder -> 'a
 
   val bidirectional_streaming :
     f:(string Seq.writer -> string Seq.t -> 'a) -> 'a handler
@@ -36,7 +37,9 @@ type do_request =
   H2.Body.Writer.t
 (** [do_request] is the type of a function that performs the request *)
 
-type error = ResponseError of H2.Status.t | ConnectionError of H2.Client_connection.error
+type error =
+  | ResponseError of H2.Status.t
+  | ConnectionError of H2.Client_connection.error
 
 val call :
   service:string ->
@@ -45,6 +48,7 @@ val call :
   handler:'a Rpc.handler ->
   do_request:do_request ->
   ?headers:H2.Headers.t ->
+  decoder:Grpc.Message.decoder ->
   unit ->
   ('a * Grpc.Status.t, error) result
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given

@@ -1,24 +1,41 @@
 module ServiceMap = Map.Make (String)
 
-type service = H2.Reqd.t -> unit
+type service = H2.Reqd.t -> Grpc.Message.decoder -> unit
 type t = service ServiceMap.t
 
 let v () = ServiceMap.empty
 let add_service ~name ~service t = ServiceMap.add name service t
+let identity : Grpc.Message.decoder = Result.ok
+
+let unsupported_decoder reqd =
+  H2.Reqd.respond_with_string reqd
+    (H2.Response.create
+       ~headers:
+         (H2.Headers.of_list
+            [
+              ( "grpc-status",
+                Grpc.Status.(Unimplemented |> int_of_code |> string_of_int) );
+              ("grpc-accept-encoding", "identity");
+              ("grpc-message", "Unsupported compression type");
+            ])
+       `OK)
+    ""
 
 let handle_request t reqd =
   let request = H2.Reqd.request reqd in
   let respond_with code =
     H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
   in
-  let route () =
+  let route ?decoder () =
+    (* no-op decoder *)
+    let decoder = decoder |> Option.value ~default:Result.ok in
     let parts = String.split_on_char '/' request.target in
     if List.length parts > 1 then
       (* allow for arbitrary prefixes *)
       let service_name = List.nth parts (List.length parts - 2) in
       let service = ServiceMap.find_opt service_name t in
       match service with
-      | Some service -> service reqd
+      | Some service -> service reqd decoder
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in
@@ -26,26 +43,24 @@ let handle_request t reqd =
   | `POST -> (
       match H2.Headers.get request.headers "content-type" with
       | Some s ->
-          if
-            String.starts_with ~prefix:"application/grpc" s
-          then
+          if String.starts_with ~prefix:"application/grpc" s then
             match H2.Headers.get request.headers "grpc-encoding" with
-            | None | Some "identity" -> (
+            | None | Some "gzip" | Some "identity" -> (
                 match H2.Headers.get request.headers "grpc-accept-encoding" with
                 | None -> route ()
-                | Some encodings ->
+                | Some encodings -> (
                     let encodings = String.split_on_char ',' encodings in
-                    if List.mem "identity" encodings then route ()
-                    else
-                      H2.Reqd.respond_with_string reqd (
-                        H2.Response.create
-                         ~headers:(H2.Headers.of_list [
-                           ("grpc-status", Grpc.Status.(Unimplemented |> int_of_code |> string_of_int));
-                           (* "content-type", "application/grpc+proto"; *)
-                           ("grpc-accept-encoding", "identity");
-                           ("grpc-message", "Unsupported compression type")
-                        ]) `OK
-                      ) "")
+                    let decoder =
+                      encodings
+                      |> List.find_map (function
+                           | "gzip" -> Some Grpc.Message.gzip
+                           | "identity" -> Some identity
+                           (*  unsupported decoder *)
+                           | _ -> None)
+                    in
+                    match decoder with
+                    | Some _ -> route ?decoder ()
+                    | None -> unsupported_decoder reqd))
             | Some _ ->
                 (* TODO: not sure if there is a specific way to handle this in grpc *)
                 respond_with `Bad_request
@@ -67,11 +82,11 @@ module Rpc = struct
     | Server_streaming of server_streaming
     | Bidirectional_streaming of bidirectional_streaming
 
-  let bidirectional_streaming ~f reqd =
+  let bidirectional_streaming ~f reqd decoder =
     let body = H2.Reqd.request_body reqd in
     let request_reader, request_writer = Seq.create_reader_writer () in
     let response_reader, response_writer = Seq.create_reader_writer () in
-    Connection.grpc_recv_streaming body request_writer;
+    Connection.grpc_recv_streaming body request_writer decoder;
     let status_promise, status_notify = Eio.Promise.create () in
     Eio.Fiber.both
       (fun () ->
@@ -117,7 +132,7 @@ module Service = struct
   let v () = RpcMap.empty
   let add_rpc ~name ~rpc t = RpcMap.add name rpc t
 
-  let handle_request (t : t) reqd =
+  let handle_request (t : t) reqd decoder =
     let request = H2.Reqd.request reqd in
     let respond_with code =
       H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
@@ -129,10 +144,11 @@ module Service = struct
       match rpc with
       | Some rpc -> (
           match rpc with
-          | Unary f -> Rpc.unary ~f reqd
-          | Client_streaming f -> Rpc.client_streaming ~f reqd
-          | Server_streaming f -> Rpc.server_streaming ~f reqd
-          | Bidirectional_streaming f -> Rpc.bidirectional_streaming ~f reqd)
+          | Unary f -> Rpc.unary ~f reqd decoder
+          | Client_streaming f -> Rpc.client_streaming ~f reqd decoder
+          | Server_streaming f -> Rpc.server_streaming ~f reqd decoder
+          | Bidirectional_streaming f ->
+              Rpc.bidirectional_streaming ~f reqd decoder)
       | None -> respond_with `Not_found
     else respond_with `Not_found
 end

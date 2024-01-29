@@ -40,7 +40,7 @@ let main env =
 
     let result =
       Grpc_eio.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
-        ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
+        ~do_request:(H2_eio.Client.request connection )
         ~handler:(Grpc_eio.Client.Rpc.unary encoded_request ~f)
         ()
     in
@@ -53,4 +53,5 @@ let () =
   match Eio_main.run main with
   | Ok (message, status) ->
       Eio.traceln "%s: %s" (Grpc.Status.show status) message
-  | Error err -> Eio.traceln "Error: %a" H2.Status.pp_hum err
+  (* | Error err ->  *)
+  | Error _ -> print_endline "an error occurred"

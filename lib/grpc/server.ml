@@ -6,7 +6,8 @@ module type S = sig
   val v : unit -> t
   (** [v ()] creates a new server. *)
 
-  val add_service : name:string -> service:(H2.Reqd.t -> unit) -> t -> t
+  val add_service :
+    name:string -> service:(H2.Reqd.t -> Message.decoder -> unit) -> t -> t
   (** [add_service ~name ~service t] adds [service] to [t] and ensures that it is routable via [name]. *)
 
   val handle_request : t -> H2.Reqd.t -> unit

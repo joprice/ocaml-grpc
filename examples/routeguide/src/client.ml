@@ -23,7 +23,8 @@ let call_get_feature connection point =
   let encode, decode = Service.make_client_functions RouteGuide.getFeature in
   let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
-      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection)
+      ~decoder:Grpc.Message.gzip
       ~handler:
         (Client.Rpc.unary
            (encode point |> Writer.contents)
@@ -56,7 +57,8 @@ let print_features connection =
   let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
   let stream =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
-      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection)
+      ~decoder:Grpc.Message.gzip
       ~handler:
         (Client.Rpc.server_streaming
            (encode rectangle |> Writer.contents)
@@ -80,8 +82,9 @@ let print_features connection =
       Seq.iter
         (fun f -> Printf.printf "RESPONSE = {%s}" (Feature.show f))
         results
-  | Error e ->
-      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
+  (* | Error e -> *)
+  (* failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e)) *)
+  | Error _ -> print_endline "an error occurred"
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-random-point *)
@@ -101,7 +104,8 @@ let run_record_route connection =
   let encode, decode = Service.make_client_functions RouteGuide.recordRoute in
   let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
-      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection)
+      ~decoder:Grpc.Message.gzip
       ~handler:
         (Client.Rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
@@ -128,8 +132,9 @@ let run_record_route connection =
   match response with
   | Ok (result, _ok) ->
       Printf.printf "SUMMARY = {%s}" (RouteSummary.show result)
-  | Error e ->
-      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
+  (* | Error e -> *)
+  (*     failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e)) *)
+  | Error _ -> print_endline "an error occurred"
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-route-chat-1 *)
@@ -179,7 +184,8 @@ let run_route_chat clock connection =
   in
   let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
-      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
+      ~decoder:Grpc.Message.gzip
+      ~do_request:(H2_eio.Client.request connection)
       ~handler:
         (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
              go writer reader route_notes))
@@ -187,8 +193,9 @@ let run_route_chat clock connection =
   in
   match result with
   | Ok ((), _ok) -> ()
-  | Error e ->
-      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
+  (* | Error e -> *)
+  (*     failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e)) *)
+  | Error _ -> print_endline "an error occurred"
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-main *)

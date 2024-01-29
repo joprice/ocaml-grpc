@@ -11,10 +11,32 @@ let make content =
   Bytes.blit_string content 0 payload 5 content_len;
   Bytes.to_string payload
 
+type decoder = string -> (string, string) result
+
+let gzip : decoder =
+ fun str ->
+  let i = De.bigstring_create De.io_buffer_size in
+  let o = De.bigstring_create De.io_buffer_size in
+  let r = Stdlib.Buffer.create 0x1000 in
+  let p = ref 0 in
+  let refill buf =
+    let len = min (String.length str - !p) De.io_buffer_size in
+    Bigstringaf.blit_from_string str ~src_off:!p buf ~dst_off:0 ~len;
+    p := !p + len;
+    len
+  in
+  let flush buf len =
+    let str = Bigstringaf.substring buf ~off:0 ~len in
+    Stdlib.Buffer.add_string r str
+  in
+  match Gz.Higher.uncompress ~refill ~flush i o with
+  | Ok _metadata -> Ok (Stdlib.Buffer.contents r)
+  | Error (`Msg err) -> Error err
+
 (** [extract_message buf] extracts the grpc message starting in [buf]
     in the buffer if there is one *)
-let extract_message buf =
-  if Buffer.length buf >= 5 then (
+let extract_message decoder buf =
+  if Buffer.length buf >= 5 then
     let compressed =
       (* A Compressed-Flag value of 1 indicates that the binary octet
          sequence of Message is compressed using the mechanism declared by
@@ -29,16 +51,20 @@ let extract_message buf =
       (* encoded as 4 byte unsigned integer (big endian) *)
       Buffer.get_u32_be buf ~pos:1
     in
-    if compressed then failwith "Compressed flag set but not supported";
     if Buffer.length buf - 5 >= length then
-      Some (Buffer.sub buf ~start:5 ~length |> Buffer.to_string)
-    else None)
+      let data = Buffer.sub buf ~start:5 ~length |> Buffer.to_string in
+      if compressed then
+        match decoder data with
+        | Ok data -> Some data
+        | Error error -> failwith ("Failed decoding " ^ error)
+      else Some data
+    else None
   else None
 
 (** [get_message_and_shift buf] tries to extract the first grpc message
     from [buf] and if successful shifts these bytes out of the buffer *)
-let get_message_and_shift buf =
-  let message = extract_message buf in
+let get_message_and_shift decoder buf =
+  let message = extract_message decoder buf in
   match message with
   | None -> None
   | Some message ->
@@ -46,11 +72,11 @@ let get_message_and_shift buf =
       Buffer.shift_left buf ~by:(5 + mlen);
       Some message
 
-let extract buf = get_message_and_shift buf
+let extract buf decoder = get_message_and_shift decoder buf
 
-let extract_all f buf =
+let extract_all f buf decoder =
   let rec loop () =
-    match extract buf with
+    match extract buf decoder with
     | None -> ()
     | Some message ->
         f message;
