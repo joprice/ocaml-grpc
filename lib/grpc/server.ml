@@ -3,7 +3,7 @@ module type S = sig
   type t
   (** [t] represents a server and its associated services and routing information. *)
 
-  val v : unit -> t
+  val v : ?codecs:Message.codec list -> unit -> t
   (** [v ()] creates a new server. *)
 
   val add_service :

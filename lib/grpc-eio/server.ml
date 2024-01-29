@@ -1,10 +1,17 @@
 module ServiceMap = Map.Make (String)
 
 type service = H2.Reqd.t -> Grpc.Message.decoder -> unit
-type t = service ServiceMap.t
+type t = Grpc.Message.codec list * service ServiceMap.t
 
-let v () = ServiceMap.empty
-let add_service ~name ~service t = ServiceMap.add name service t
+(*  TODO: pass in *)
+(* let supported_codecs = *)
+(*   [ Grpc.Message.gzip ~level:4 (); Grpc.Message.identity ] *)
+(* in *)
+
+let v ?(codecs = [ Grpc.Message.identity ]) () = (codecs, ServiceMap.empty)
+
+let add_service ~name ~service (codecs, services) =
+  (codecs, ServiceMap.add name service services)
 
 let unsupported_decoder reqd =
   H2.Reqd.respond_with_string reqd
@@ -20,11 +27,7 @@ let unsupported_decoder reqd =
        `OK)
     ""
 
-let handle_request t reqd =
-  (*  TODO: pass in *)
-  let supported_codecs =
-    [ Grpc.Message.gzip ~level:4 (); Grpc.Message.identity ]
-  in
+let handle_request (codecs, t) reqd =
   let request = H2.Reqd.request reqd in
   let respond_with code =
     H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
@@ -54,7 +57,7 @@ let handle_request t reqd =
                     let codec =
                       encodings
                       |> List.find_map (fun name ->
-                             supported_codecs
+                             codecs
                              |> List.find_map
                                   (fun (codec : Grpc.Message.codec) ->
                                     if codec.name = name then Some codec
