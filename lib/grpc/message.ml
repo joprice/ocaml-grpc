@@ -55,6 +55,11 @@ let identity : codec =
   { name = "identity"; decoder = Result.ok; encoder = Result.ok }
 
 let make ~codec content =
+  let content =
+    match codec.encoder content with
+    | Ok content -> content
+    | Error error -> failwith error
+  in
   let content_len = String.length content in
   let payload = Bytes.create @@ (content_len + 1 + 4) in
   (* write compressed flag (uint8) *)
@@ -66,10 +71,7 @@ let make ~codec content =
   Bytes.set_uint16_be payload 3 (length land 0xFFFF);
   (* write msg *)
   Bytes.blit_string content 0 payload 5 content_len;
-  let payload = Bytes.to_string payload in
-  match codec.encoder payload with
-  | Ok payload -> payload
-  | Error error -> failwith error
+  Bytes.to_string payload
 
 (** [extract_message buf] extracts the grpc message starting in [buf]
     in the buffer if there is one *)

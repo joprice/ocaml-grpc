@@ -13,7 +13,7 @@ let v ?(codecs = [ Grpc.Message.identity ]) () = (codecs, ServiceMap.empty)
 let add_service ~name ~service (codecs, services) =
   (codecs, ServiceMap.add name service services)
 
-let unsupported_decoder reqd =
+let unsupported_decoder encodings reqd =
   H2.Reqd.respond_with_string reqd
     (H2.Response.create
        ~headers:
@@ -21,7 +21,10 @@ let unsupported_decoder reqd =
             [
               ( "grpc-status",
                 Grpc.Status.(Unimplemented |> int_of_code |> string_of_int) );
-              ("grpc-accept-encoding", "identity");
+              ( "grpc-accept-encoding",
+                encodings
+                |> List.map (fun (codec : Grpc.Message.codec) -> codec.name)
+                |> String.concat "," );
               ("grpc-message", "Unsupported compression type");
             ])
        `OK)
@@ -32,7 +35,7 @@ let handle_request (codecs, t) reqd =
   let respond_with code =
     H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
   in
-  let route ~(codec : Grpc.Message.codec) () =
+  let route ~(codec : Grpc.Message.codec) =
     let parts = String.split_on_char '/' request.target in
     if List.length parts > 1 then
       (* allow for arbitrary prefixes *)
@@ -43,32 +46,36 @@ let handle_request (codecs, t) reqd =
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in
+  let find_codec name =
+    codecs
+    |> List.find_map (fun (codec : Grpc.Message.codec) ->
+           if codec.name = name then Some codec else None)
+  in
+  let client_codec () =
+    match H2.Headers.get request.headers "grpc-encoding" with
+    | Some name -> find_codec name
+    | None -> Some Grpc.Message.identity
+  in
+  let server_codec () =
+    match H2.Headers.get request.headers "grpc-accept-encoding" with
+    | None -> Some Grpc.Message.identity
+    | Some encodings ->
+        let encodings = String.split_on_char ',' encodings in
+        encodings
+        |> List.find_map (fun name ->
+               codecs
+               |> List.find_map (fun (codec : Grpc.Message.codec) ->
+                      if codec.name = name then Some codec else None))
+  in
   match request.meth with
   | `POST -> (
       match H2.Headers.get request.headers "content-type" with
       | Some s ->
           if String.starts_with ~prefix:"application/grpc" s then
-            match H2.Headers.get request.headers "grpc-encoding" with
-            | None | Some "gzip" | Some "identity" -> (
-                match H2.Headers.get request.headers "grpc-accept-encoding" with
-                | None -> route ~codec:Grpc.Message.identity ()
-                | Some encodings -> (
-                    let encodings = String.split_on_char ',' encodings in
-                    let codec =
-                      encodings
-                      |> List.find_map (fun name ->
-                             codecs
-                             |> List.find_map
-                                  (fun (codec : Grpc.Message.codec) ->
-                                    if codec.name = name then Some codec
-                                    else None))
-                    in
-                    match codec with
-                    | Some codec -> route ~codec ()
-                    | None -> unsupported_decoder reqd))
-            | Some _ ->
-                (* TODO: not sure if there is a specific way to handle this in grpc *)
-                respond_with `Bad_request
+            match (client_codec (), server_codec ()) with
+            | Some { decoder; _ }, Some { name; encoder; _ } ->
+                route ~codec:{ name; encoder; decoder }
+            | _ -> unsupported_decoder codecs reqd
           else respond_with `Unsupported_media_type
       | None -> respond_with `Unsupported_media_type)
   | _ -> respond_with `Not_found

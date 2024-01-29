@@ -20,12 +20,17 @@ let grpc_send_streaming_client body encoder_stream (codec : Grpc.Message.codec)
     encoder_stream;
   H2.Body.Writer.close body
 
-let grpc_send_streaming request encoder_stream status_promise codec =
+let grpc_send_streaming request encoder_stream status_promise
+    (codec : Grpc.Message.codec) =
   let body =
     H2.Reqd.respond_with_streaming ~flush_headers_immediately:true request
       (H2.Response.create
          ~headers:
-           (H2.Headers.of_list [ ("content-type", "application/grpc+proto") ])
+           (H2.Headers.of_list
+              [
+                ("grpc-encoding", codec.name);
+                ("content-type", "application/grpc+proto");
+              ])
          `OK)
   in
   Seq.iter
