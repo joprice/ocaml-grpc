@@ -38,6 +38,7 @@ let do_grpc ~host ~port ~service ~rpc ~request ~decode ~show =
   let handler = Grpc_lwt.Client.Rpc.unary ~f request in
   connection ~host ~port >>= fun connection ->
   Grpc_lwt.Client.call ~service ~rpc ~scheme:"http" ~handler
+    ~codec:(Grpc.Message.gzip ())
     ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
     ()
 

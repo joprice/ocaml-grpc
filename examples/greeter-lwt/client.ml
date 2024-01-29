@@ -24,6 +24,7 @@ let call_server address port req =
   let enc = encode req |> Writer.contents in
 
   Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
+    ~codec:(Grpc.Message.gzip ())
     ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
     ~handler:
       (Client.Rpc.unary enc ~f:(fun decoder ->

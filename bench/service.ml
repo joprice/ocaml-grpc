@@ -14,7 +14,7 @@ let extract_message len =
   Staged.stage @@ fun () ->
   let buf = Grpc.Buffer.v () in
   Grpc.Buffer.copy_from_bigstringaf ~src_off:0 ~src:bs ~dst:buf ~length:len;
-  ignore (Grpc.Message.extract buf)
+  ignore (Grpc.Message.extract buf Grpc.Message.identity.decoder)
 
 let test_buffer =
   Test.make_indexed ~name:"buffer" ~fmt:"%s %d"

@@ -17,6 +17,7 @@ let call_get_feature connection point =
   let encode, decode = Service.make_client_functions RouteGuide.getFeature in
   let* response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
+      ~codec:(Grpc.Message.gzip ())
       ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.unary
@@ -49,6 +50,7 @@ let print_features connection =
   let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
   let* stream =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
+      ~codec:(Grpc.Message.gzip ())
       ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.server_streaming
@@ -97,6 +99,7 @@ let run_record_route connection =
   let encode, decode = Service.make_client_functions RouteGuide.recordRoute in
   let* response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
+      ~codec:(Grpc.Message.gzip ())
       ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.client_streaming ~f:(fun f response ->
@@ -172,6 +175,7 @@ let run_route_chat connection =
   in
   let* result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
+      ~codec:(Grpc.Message.gzip ())
       ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.bidirectional_streaming ~f:(fun f stream ->
