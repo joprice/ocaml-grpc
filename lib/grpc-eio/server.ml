@@ -21,26 +21,24 @@ let unsupported_decoder reqd =
     ""
 
 let handle_request t reqd =
+  (*  TODO: pass in *)
+  let supported_codecs =
+    [ Grpc.Message.gzip ~level:4 (); Grpc.Message.identity ]
+  in
   let request = H2.Reqd.request reqd in
   let respond_with code =
     H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
   in
-  let route ?decoder () =
-    (* no-op decoder *)
-    let decoder = decoder |> Option.value ~default:Result.ok in
+  let route ~(codec : Grpc.Message.codec) () =
     let parts = String.split_on_char '/' request.target in
     if List.length parts > 1 then
       (* allow for arbitrary prefixes *)
       let service_name = List.nth parts (List.length parts - 2) in
       let service = ServiceMap.find_opt service_name t in
       match service with
-      | Some service -> service reqd decoder
+      | Some service -> service reqd codec.decoder
       | None -> respond_with `Not_found
     else respond_with `Not_found
-  in
-  (*  TODO: pass in *)
-  let supported_codecs =
-    [ Grpc.Message.gzip ~level:4 (); Grpc.Message.identity ]
   in
   match request.meth with
   | `POST -> (
@@ -50,20 +48,20 @@ let handle_request t reqd =
             match H2.Headers.get request.headers "grpc-encoding" with
             | None | Some "gzip" | Some "identity" -> (
                 match H2.Headers.get request.headers "grpc-accept-encoding" with
-                | None -> route ()
+                | None -> route ~codec:Grpc.Message.identity ()
                 | Some encodings -> (
                     let encodings = String.split_on_char ',' encodings in
-                    let decoder =
+                    let codec =
                       encodings
                       |> List.find_map (fun name ->
                              supported_codecs
                              |> List.find_map
                                   (fun (codec : Grpc.Message.codec) ->
-                                    if codec.name = name then Some codec.decoder
+                                    if codec.name = name then Some codec
                                     else None))
                     in
-                    match decoder with
-                    | Some _ -> route ?decoder ()
+                    match codec with
+                    | Some codec -> route ~codec ()
                     | None -> unsupported_decoder reqd))
             | Some _ ->
                 (* TODO: not sure if there is a specific way to handle this in grpc *)
