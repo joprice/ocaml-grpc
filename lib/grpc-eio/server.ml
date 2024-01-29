@@ -27,7 +27,7 @@ let handle_request t reqd =
       match H2.Headers.get request.headers "content-type" with
       | Some s ->
           if
-            Stringext.chop_prefix s ~prefix:"application/grpc" |> Option.is_some
+            String.starts_with ~prefix:"application/grpc" s
           then
             match H2.Headers.get request.headers "grpc-encoding" with
             | None | Some "identity" -> (
@@ -36,7 +36,16 @@ let handle_request t reqd =
                 | Some encodings ->
                     let encodings = String.split_on_char ',' encodings in
                     if List.mem "identity" encodings then route ()
-                    else respond_with `Not_acceptable)
+                    else
+                      H2.Reqd.respond_with_string reqd (
+                        H2.Response.create
+                         ~headers:(H2.Headers.of_list [
+                           ("grpc-status", Grpc.Status.(Unimplemented |> int_of_code |> string_of_int));
+                           (* "content-type", "application/grpc+proto"; *)
+                           ("grpc-accept-encoding", "identity");
+                           ("grpc-message", "Unsupported compression type")
+                        ]) `OK
+                      ) "")
             | Some _ ->
                 (* TODO: not sure if there is a specific way to handle this in grpc *)
                 respond_with `Bad_request

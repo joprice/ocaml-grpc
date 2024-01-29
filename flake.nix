@@ -2,13 +2,17 @@
   description = "A modular gRPC library";
 
   inputs = {
+    # nixpkgs = {
+    #   url = "github:sternenseemann/nixpkgs/ppx_deriving-5.1";
+    # };
     nixpkgs = {
-      url = "github:sternenseemann/nixpkgs/ppx_deriving-5.1";
+        url = "github:nix-ocaml/nix-overlays";
     };
   };
 
-  outputs = { self, nixpkgs }:
-    with import nixpkgs { system = "x86_64-linux"; };
+  outputs = { self, nixpkgs, flake-utils }:
+   flake-utils.lib.eachDefaultSystem (system:
+    with nixpkgs.legacyPackages.${system};
     let
       h2-src = fetchFromGitHub {
         owner = "jeffa5";
@@ -58,7 +62,7 @@
 
       defaultPackage.x86_64-linux = self.packages.x86_64-linux.grpc;
 
-      devShell.x86_64-linux = mkShell {
+      devShells = mkShell {
         buildInputs = [
           ocaml
           opam
@@ -74,5 +78,5 @@
           eval $(opam env)
         '';
       };
-    };
+    });
 }
