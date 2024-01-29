@@ -40,6 +40,7 @@ let call_get_feature connection point =
   let%bind response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
       ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
+      ~codec:(Grpc.Message.gzip ())
       ~handler:
         (Client.Rpc.unary
            ~encoded_request:(encode point |> Writer.contents)
@@ -89,6 +90,7 @@ let print_features connection =
   let%bind stream =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
       ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
+      ~codec:(Grpc.Message.gzip ())
       ~handler:
         (Client.Rpc.server_streaming
            ~encoded_request:(encode rectangle |> Writer.contents)
@@ -138,7 +140,7 @@ let run_record_route connection =
   let%bind response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
       ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
-      ~handler ()
+      ~codec:(Grpc.Message.gzip ()) ~handler ()
   in
   match response with
   | Ok (result, _ok) ->
@@ -202,6 +204,7 @@ let run_route_chat connection =
   let%bind result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
       ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
+      ~codec:(Grpc.Message.gzip ())
       ~handler:
         (Client.Rpc.bidirectional_streaming ~handler:(fun f stream ->
              go f stream route_notes))

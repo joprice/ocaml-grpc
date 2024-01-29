@@ -29,7 +29,7 @@ let response_handler read_body_ivar out_ivar (response : H2.Response.t)
   Ivar.fill out_ivar response
 
 let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
-    ?(headers = default_headers) () =
+    ?(headers = default_headers) ~codec () =
   let request = make_request ~service ~rpc ~scheme ~headers in
   let read_body_ivar = Ivar.create () in
   let out_ivar = Ivar.create () in
@@ -40,7 +40,9 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       request
       ~response_handler:(response_handler read_body_ivar out_ivar)
   in
-  let%bind handler_res = handler write_body (Ivar.read read_body_ivar) in
+  let%bind handler_res =
+    handler write_body (Ivar.read read_body_ivar) codec.Grpc.Message.decoder
+  in
   let%bind response = Ivar.read out_ivar in
   match response.status with
   | `OK ->
@@ -54,13 +56,16 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
 
 module Rpc = struct
   type 'a handler =
-    H2.Body.Writer.t -> H2.Body.Reader.t Deferred.t -> 'a Deferred.t
+    H2.Body.Writer.t ->
+    H2.Body.Reader.t Deferred.t ->
+    Grpc.Message.decoder ->
+    'a Deferred.t
 
-  let bidirectional_streaming ~handler write_body read_body =
+  let bidirectional_streaming ~handler write_body read_body decoder =
     let decoder_r, decoder_w = Async.Pipe.create () in
     don't_wait_for
       (let%map read_body = read_body in
-       Connection.grpc_recv_streaming read_body decoder_w);
+       Connection.grpc_recv_streaming read_body decoder_w decoder);
     let encoder_r, encoder_w = Async.Pipe.create () in
     don't_wait_for (Connection.grpc_send_streaming_client write_body encoder_r);
     let%bind out = handler encoder_w decoder_r in
@@ -85,7 +90,7 @@ module Rpc = struct
         handler decoder_r)
       write_body read_body
 
-  let unary ~handler ~encoded_request write_body read_body =
+  let unary ~handler ~encoded_request write_body read_body decoder =
     let payload = Grpc.Message.make encoded_request in
     H2.Body.Writer.write_string write_body payload;
     H2.Body.Writer.close write_body;
@@ -98,5 +103,5 @@ module Rpc = struct
       H2.Body.Reader.schedule_read read_body ~on_read ~on_eof
     in
     H2.Body.Reader.schedule_read read_body ~on_read ~on_eof;
-    handler (Grpc.Message.extract request_buffer)
+    handler (Grpc.Message.extract request_buffer decoder)
 end

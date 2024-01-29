@@ -2,7 +2,10 @@ open! Async
 
 module Rpc : sig
   type 'a handler =
-    H2.Body.Writer.t -> H2.Body.Reader.t Deferred.t -> 'a Deferred.t
+    H2.Body.Writer.t ->
+    H2.Body.Reader.t Deferred.t ->
+    Grpc.Message.decoder ->
+    'a Deferred.t
 
   val bidirectional_streaming :
     handler:(string Pipe.Writer.t -> string Pipe.Reader.t -> 'a Deferred.t) ->
@@ -58,6 +61,7 @@ val call :
   handler:'a Rpc.handler ->
   do_request:do_request ->
   ?headers:H2.Headers.t ->
+  codec:Grpc.Message.codec ->
   unit ->
   ('a * Grpc.Status.t, H2.Status.t) Core._result Deferred.t
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given

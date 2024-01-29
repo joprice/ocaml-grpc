@@ -1,7 +1,7 @@
 open! Core
 open! Async
 
-let grpc_recv_streaming body buffer_push =
+let grpc_recv_streaming body buffer_push decoder =
   let request_buffer = Grpc.Buffer.v () in
   let on_eof () = Async.Pipe.close buffer_push in
   let rec on_read buffer ~off ~len =
@@ -9,7 +9,7 @@ let grpc_recv_streaming body buffer_push =
       ~dst:request_buffer ~length:len;
     Grpc.Message.extract_all
       (Async.Pipe.write_without_pushback buffer_push)
-      request_buffer;
+      request_buffer decoder;
     H2.Body.Reader.schedule_read body ~on_read ~on_eof
   in
   H2.Body.Reader.schedule_read body ~on_read ~on_eof

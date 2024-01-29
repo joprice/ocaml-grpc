@@ -26,6 +26,7 @@ let call_server ~host ~port req =
   let enc = encode req |> Writer.contents in
   Grpc_async.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
     ~do_request:(H2_async.Client.TLS.request tls_conn ~error_handler:ignore)
+    ~codec:(Grpc.Message.gzip ())
     ~handler:
       (Grpc_async.Client.Rpc.unary ~encoded_request:enc ~handler:(function
         | None -> return (Greeter.SayHello.Response.make ())

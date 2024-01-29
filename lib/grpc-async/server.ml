@@ -1,13 +1,15 @@
 open! Async
 module ServiceMap = Map.Make (String)
 
-type service = H2.Reqd.t -> unit
-type t = service ServiceMap.t
+type service = H2.Reqd.t -> Grpc.Message.decoder -> unit
+type t = Grpc.Message.codec list * service ServiceMap.t
 
-let v () = ServiceMap.empty
-let add_service ~name ~service t = ServiceMap.add name service t
+let v ?(codecs = [ Grpc.Message.identity ]) () = (codecs, ServiceMap.empty)
 
-let handle_request t reqd =
+let add_service ~name ~service (codecs, t) =
+  (codecs, ServiceMap.add name service t)
+
+let handle_request (_codecs, t) reqd =
   let request = H2.Reqd.request reqd in
   let respond_with code =
     H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
@@ -19,7 +21,8 @@ let handle_request t reqd =
       let service_name = List.nth parts (List.length parts - 2) in
       let service = ServiceMap.find_opt service_name t in
       match service with
-      | Some service -> service reqd
+      (* TODO: negotiate and pass in *)
+      | Some service -> service reqd Grpc.Message.identity.decoder
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in
@@ -64,12 +67,12 @@ module Rpc = struct
     | Bidirectional_streaming of bidirectional_streaming
 
   let bidirectional_streaming ~(f : bidirectional_streaming) (reqd : H2.Reqd.t)
-      : unit Deferred.t =
+      decoder : unit Deferred.t =
     let decoder_stream, decoder_push = Async.Pipe.create () in
     let body = H2.Reqd.request_body reqd in
 
     (* Pass the H2 body reader and the push function to grpc_recv_streaming. *)
-    Connection.grpc_recv_streaming body decoder_push;
+    Connection.grpc_recv_streaming body decoder_push decoder;
 
     (* Create outgoing string Pipe.t. *)
     let encoder_stream, encoder_push = Async.Pipe.create () in
@@ -124,7 +127,7 @@ module Service = struct
   let v () = RpcMap.empty
   let add_rpc ~name ~rpc t = RpcMap.add name rpc t
 
-  let handle_request (t : t) reqd =
+  let handle_request (t : t) reqd decoder =
     let request = H2.Reqd.request reqd in
     let respond_with code =
       H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
@@ -136,11 +139,13 @@ module Service = struct
       match rpc with
       | Some rpc -> (
           match rpc with
-          | Unary f -> don't_wait_for (Rpc.unary ~f reqd)
-          | Client_streaming f -> don't_wait_for (Rpc.client_streaming ~f reqd)
-          | Server_streaming f -> don't_wait_for (Rpc.server_streaming ~f reqd)
+          | Unary f -> don't_wait_for (Rpc.unary ~f reqd decoder)
+          | Client_streaming f ->
+              don't_wait_for (Rpc.client_streaming ~f reqd decoder)
+          | Server_streaming f ->
+              don't_wait_for (Rpc.server_streaming ~f reqd decoder)
           | Bidirectional_streaming f ->
-              don't_wait_for (Rpc.bidirectional_streaming ~f reqd))
+              don't_wait_for (Rpc.bidirectional_streaming ~f reqd decoder))
       | None -> respond_with `Not_found
     else respond_with `Not_found
 end

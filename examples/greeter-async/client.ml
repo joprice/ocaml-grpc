@@ -41,6 +41,7 @@ let call_server address port req =
 
   Grpc_async.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
     ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
+    ~codec:(Grpc.Message.gzip ())
     ~handler:
       (Grpc_async.Client.Rpc.unary ~encoded_request:enc ~handler:(function
         | None -> return (Greeter.SayHello.Response.make ())
