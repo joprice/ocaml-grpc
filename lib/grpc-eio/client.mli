@@ -48,7 +48,7 @@ val call :
   handler:'a Rpc.handler ->
   do_request:do_request ->
   ?headers:H2.Headers.t ->
-  decoder:Grpc.Message.decoder ->
+  codec:Grpc.Message.codec ->
   unit ->
   ('a * Grpc.Status.t, error) result
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given

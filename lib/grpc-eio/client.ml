@@ -59,7 +59,7 @@ let get_response_and_bodies request =
   Result.bind read_body @@ fun read_body -> Ok (response, read_body, write_body)
 
 let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
-    ?(headers = default_headers) ~decoder () =
+    ?(headers = default_headers) ~codec () =
   let request = make_request ~service ~rpc ~scheme ~headers in
   let status, trailers_handler = make_trailers_handler () in
   let response =
@@ -70,7 +70,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   match response.status with
   | `OK ->
       trailers_handler response.headers;
-      let result = handler write_body read_body decoder in
+      let result = handler write_body read_body codec.Grpc.Message.decoder in
       let status =
         match Eio.Promise.is_resolved status with
         (* In case no grpc-status appears in headers or trailers. *)

@@ -24,7 +24,7 @@ let call_get_feature connection point =
   let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
       ~do_request:(H2_eio.Client.request connection)
-      ~decoder:Grpc.Message.gzip
+      ~codec:(Grpc.Message.gzip ())
       ~handler:
         (Client.Rpc.unary
            (encode point |> Writer.contents)
@@ -58,7 +58,7 @@ let print_features connection =
   let stream =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
       ~do_request:(H2_eio.Client.request connection)
-      ~decoder:Grpc.Message.gzip
+      ~codec:(Grpc.Message.gzip ())
       ~handler:
         (Client.Rpc.server_streaming
            (encode rectangle |> Writer.contents)
@@ -105,7 +105,7 @@ let run_record_route connection =
   let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
       ~do_request:(H2_eio.Client.request connection)
-      ~decoder:Grpc.Message.gzip
+      ~codec:(Grpc.Message.gzip ())
       ~handler:
         (Client.Rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
@@ -184,7 +184,7 @@ let run_route_chat clock connection =
   in
   let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
-      ~decoder:Grpc.Message.gzip
+      ~codec:(Grpc.Message.gzip ())
       ~do_request:(H2_eio.Client.request connection)
       ~handler:
         (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->

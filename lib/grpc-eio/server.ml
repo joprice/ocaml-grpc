@@ -5,7 +5,6 @@ type t = service ServiceMap.t
 
 let v () = ServiceMap.empty
 let add_service ~name ~service t = ServiceMap.add name service t
-let identity : Grpc.Message.decoder = Result.ok
 
 let unsupported_decoder reqd =
   H2.Reqd.respond_with_string reqd
@@ -39,6 +38,10 @@ let handle_request t reqd =
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in
+  (*  TODO: pass in *)
+  let supported_codecs =
+    [ Grpc.Message.gzip ~level:4 (); Grpc.Message.identity ]
+  in
   match request.meth with
   | `POST -> (
       match H2.Headers.get request.headers "content-type" with
@@ -52,11 +55,12 @@ let handle_request t reqd =
                     let encodings = String.split_on_char ',' encodings in
                     let decoder =
                       encodings
-                      |> List.find_map (function
-                           | "gzip" -> Some Grpc.Message.gzip
-                           | "identity" -> Some identity
-                           (*  unsupported decoder *)
-                           | _ -> None)
+                      |> List.find_map (fun name ->
+                             supported_codecs
+                             |> List.find_map
+                                  (fun (codec : Grpc.Message.codec) ->
+                                    if codec.name = name then Some codec.decoder
+                                    else None))
                     in
                     match decoder with
                     | Some _ -> route ?decoder ()

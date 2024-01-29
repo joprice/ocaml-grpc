@@ -1,3 +1,59 @@
+type decoder = string -> (string, string) result
+type encoder = string -> (string, string) result
+type codec = { name : string; encoder : encoder; decoder : decoder }
+
+module Gzip = struct
+  let encoder ~time ~level str =
+    let i = De.bigstring_create De.io_buffer_size in
+    let o = De.bigstring_create De.io_buffer_size in
+    let w = De.Lz77.make_window ~bits:15 in
+    let q = De.Queue.create 0x1000 in
+    let r = Stdlib.Buffer.create 0x1000 in
+    let p = ref 0 in
+    (* TODO: is configuration meant to be reused? *)
+    let time () = Int32.of_float (time ()) in
+    let cfg = Gz.Higher.configuration Gz.Unix time in
+    let refill buf =
+      let len = min (String.length str - !p) De.io_buffer_size in
+      Bigstringaf.blit_from_string str ~src_off:!p buf ~dst_off:0 ~len;
+      p := !p + len;
+      len
+    in
+    let flush buf len =
+      let str = Bigstringaf.substring buf ~off:0 ~len in
+      Stdlib.Buffer.add_string r str
+    in
+    Gz.Higher.compress ~w ~q ~level ~refill ~flush () cfg i o;
+    Ok (Stdlib.Buffer.contents r)
+
+  let decoder : decoder =
+   fun str ->
+    let i = De.bigstring_create De.io_buffer_size in
+    let o = De.bigstring_create De.io_buffer_size in
+    let r = Stdlib.Buffer.create 0x1000 in
+    let p = ref 0 in
+    let refill buf =
+      let len = min (String.length str - !p) De.io_buffer_size in
+      Bigstringaf.blit_from_string str ~src_off:!p buf ~dst_off:0 ~len;
+      p := !p + len;
+      len
+    in
+    let flush buf len =
+      let str = Bigstringaf.substring buf ~off:0 ~len in
+      Stdlib.Buffer.add_string r str
+    in
+    match Gz.Higher.uncompress ~refill ~flush i o with
+    | Ok _metadata -> Ok (Stdlib.Buffer.contents r)
+    | Error (`Msg err) -> Error err
+end
+
+let gzip ?(level = 4) () : codec =
+  let time = Unix.gettimeofday in
+  { name = "gzip"; decoder = Gzip.decoder; encoder = Gzip.encoder ~level ~time }
+
+let identity : codec =
+  { name = "identity"; decoder = Result.ok; encoder = Result.ok }
+
 let make content =
   let content_len = String.length content in
   let payload = Bytes.create @@ (content_len + 1 + 4) in
@@ -10,28 +66,6 @@ let make content =
   (* write msg *)
   Bytes.blit_string content 0 payload 5 content_len;
   Bytes.to_string payload
-
-type decoder = string -> (string, string) result
-
-let gzip : decoder =
- fun str ->
-  let i = De.bigstring_create De.io_buffer_size in
-  let o = De.bigstring_create De.io_buffer_size in
-  let r = Stdlib.Buffer.create 0x1000 in
-  let p = ref 0 in
-  let refill buf =
-    let len = min (String.length str - !p) De.io_buffer_size in
-    Bigstringaf.blit_from_string str ~src_off:!p buf ~dst_off:0 ~len;
-    p := !p + len;
-    len
-  in
-  let flush buf len =
-    let str = Bigstringaf.substring buf ~off:0 ~len in
-    Stdlib.Buffer.add_string r str
-  in
-  match Gz.Higher.uncompress ~refill ~flush i o with
-  | Ok _metadata -> Ok (Stdlib.Buffer.contents r)
-  | Error (`Msg err) -> Error err
 
 (** [extract_message buf] extracts the grpc message starting in [buf]
     in the buffer if there is one *)
