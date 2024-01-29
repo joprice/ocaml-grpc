@@ -40,7 +40,8 @@ let main env =
 
     let result =
       Grpc_eio.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
-        ~codec:(Grpc.Message.gzip ())
+        ~codec:
+          (Grpc.Message.gzip ~time:(fun () -> env#clock |> Eio.Time.now) ())
         ~do_request:(H2_eio.Client.request connection)
         ~handler:(Grpc_eio.Client.Rpc.unary encoded_request ~f)
         ()

@@ -47,8 +47,8 @@ module Gzip = struct
     | Error (`Msg err) -> Error err
 end
 
-let gzip ?(level = 4) () : codec =
-  let time = Unix.gettimeofday in
+let gzip ?time ?(level = 4) () : codec =
+  let time = match time with Some time -> time | None -> Unix.gettimeofday in
   { name = "gzip"; decoder = Gzip.decoder; encoder = Gzip.encoder ~level ~time }
 
 let identity : codec =

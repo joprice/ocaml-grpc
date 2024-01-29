@@ -11,5 +11,5 @@ val extract : Buffer.t -> decoder -> string option
 val extract_all : (string -> unit) -> Buffer.t -> decoder -> unit
 (** [extract_all f b] extracts and calls [f] on all gRPC messages from [b]. *)
 
-val gzip : ?level:int -> unit -> codec
+val gzip : ?time:(unit -> float) -> ?level:int -> unit -> codec
 val identity : codec
