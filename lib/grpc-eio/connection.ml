@@ -11,15 +11,16 @@ let grpc_recv_streaming body message_buffer_writer decoder =
   in
   H2.Body.Reader.schedule_read body ~on_read ~on_eof
 
-let grpc_send_streaming_client body encoder_stream =
+let grpc_send_streaming_client body encoder_stream (codec : Grpc.Message.codec)
+    =
   Seq.iter
     (fun encoder ->
-      let payload = Grpc.Message.make encoder in
+      let payload = Grpc.Message.make ~codec encoder in
       H2.Body.Writer.write_string body payload)
     encoder_stream;
   H2.Body.Writer.close body
 
-let grpc_send_streaming request encoder_stream status_promise =
+let grpc_send_streaming request encoder_stream status_promise codec =
   let body =
     H2.Reqd.respond_with_streaming ~flush_headers_immediately:true request
       (H2.Response.create
@@ -29,7 +30,7 @@ let grpc_send_streaming request encoder_stream status_promise =
   in
   Seq.iter
     (fun input ->
-      let payload = Grpc.Message.make input in
+      let payload = Grpc.Message.make ~codec input in
       H2.Body.Writer.write_string body payload;
       H2.Body.Writer.flush body (fun () -> ()))
     encoder_stream;

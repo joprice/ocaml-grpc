@@ -40,9 +40,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       request
       ~response_handler:(response_handler read_body_ivar out_ivar)
   in
-  let%bind handler_res =
-    handler write_body (Ivar.read read_body_ivar) codec.Grpc.Message.decoder
-  in
+  let%bind handler_res = handler write_body (Ivar.read read_body_ivar) codec in
   let%bind response = Ivar.read out_ivar in
   match response.status with
   | `OK ->
@@ -58,16 +56,18 @@ module Rpc = struct
   type 'a handler =
     H2.Body.Writer.t ->
     H2.Body.Reader.t Deferred.t ->
-    Grpc.Message.decoder ->
+    Grpc.Message.codec ->
     'a Deferred.t
 
-  let bidirectional_streaming ~handler write_body read_body decoder =
+  let bidirectional_streaming ~handler write_body read_body
+      (codec : Grpc.Message.codec) =
     let decoder_r, decoder_w = Async.Pipe.create () in
     don't_wait_for
       (let%map read_body = read_body in
-       Connection.grpc_recv_streaming read_body decoder_w decoder);
+       Connection.grpc_recv_streaming read_body decoder_w codec.decoder);
     let encoder_r, encoder_w = Async.Pipe.create () in
-    don't_wait_for (Connection.grpc_send_streaming_client write_body encoder_r);
+    don't_wait_for
+      (Connection.grpc_send_streaming_client write_body encoder_r codec);
     let%bind out = handler encoder_w decoder_r in
     if not (Pipe.is_closed encoder_w) then Pipe.close encoder_w;
     if not (Pipe.is_closed decoder_w) then Pipe.close decoder_w;
@@ -90,8 +90,8 @@ module Rpc = struct
         handler decoder_r)
       write_body read_body
 
-  let unary ~handler ~encoded_request write_body read_body decoder =
-    let payload = Grpc.Message.make encoded_request in
+  let unary ~handler ~encoded_request write_body read_body codec =
+    let payload = Grpc.Message.make ~codec encoded_request in
     H2.Body.Writer.write_string write_body payload;
     H2.Body.Writer.close write_body;
     let%bind read_body = read_body in
@@ -103,5 +103,5 @@ module Rpc = struct
       H2.Body.Reader.schedule_read read_body ~on_read ~on_eof
     in
     H2.Body.Reader.schedule_read read_body ~on_read ~on_eof;
-    handler (Grpc.Message.extract request_buffer decoder)
+    handler (Grpc.Message.extract request_buffer codec.decoder)
 end

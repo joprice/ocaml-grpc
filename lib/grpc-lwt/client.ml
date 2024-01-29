@@ -39,7 +39,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
       ~response_handler:(response_handler read_body_notify response_notify)
       ~trailers_handler:(trailers_handler status_notify)
   in
-  let* handler_res = handler write_body read_body codec.Grpc.Message.decoder in
+  let* handler_res = handler write_body read_body codec in
   let* response = response in
   match response.status with
   | `OK ->
@@ -53,21 +53,18 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
 
 module Rpc = struct
   type 'a handler =
-    H2.Body.Writer.t ->
-    H2.Body.Reader.t Lwt.t ->
-    Grpc.Message.decoder ->
-    'a Lwt.t
+    H2.Body.Writer.t -> H2.Body.Reader.t Lwt.t -> Grpc.Message.codec -> 'a Lwt.t
 
-  let bidirectional_streaming ~f write_body read_body decoder =
+  let bidirectional_streaming ~f write_body read_body codec =
     let encoder_stream, encoder_push = Lwt_stream.create () in
     let decoder_stream, decoder_push = Lwt_stream.create () in
     let res = f encoder_push decoder_stream in
     let* () =
       Lwt.join
         [
-          Connection.grpc_send_streaming_client write_body encoder_stream;
+          Connection.grpc_send_streaming_client write_body encoder_stream codec;
           (let+ read_body = read_body in
-           Connection.grpc_recv_streaming read_body decoder_push decoder);
+           Connection.grpc_recv_streaming read_body decoder_push codec.decoder);
         ]
     in
     res
@@ -85,15 +82,15 @@ module Rpc = struct
           enc;
         f decoder_stream)
 
-  let unary ~f enc write_body read_body decoder =
-    let payload = Grpc.Message.make enc in
+  let unary ~f enc write_body read_body codec =
+    let payload = Grpc.Message.make ~codec enc in
     H2.Body.Writer.write_string write_body payload;
     H2.Body.Writer.close write_body;
     let* read_body = read_body in
     let request_buffer = Grpc.Buffer.v () in
     let message, message_notify = Lwt.task () in
     let on_eof () =
-      let message = Grpc.Message.extract request_buffer decoder in
+      let message = Grpc.Message.extract request_buffer codec.decoder in
       Lwt.wakeup_later message_notify message
     in
     let rec on_read buffer ~off ~len =

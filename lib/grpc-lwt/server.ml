@@ -1,6 +1,6 @@
 module ServiceMap = Map.Make (String)
 
-type service = H2.Reqd.t -> Grpc.Message.decoder -> unit
+type service = H2.Reqd.t -> Grpc.Message.codec -> unit
 type t = Grpc.Message.codec list * service ServiceMap.t
 
 let v ?(codecs = [ Grpc.Message.identity ]) () = (codecs, ServiceMap.empty)
@@ -22,7 +22,7 @@ let handle_request (_codecs, t) reqd : unit =
       match service with
       | Some service ->
           (* TODO: negotate and pass this in  *)
-          service reqd Grpc.Message.identity.decoder
+          service reqd Grpc.Message.identity
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in
@@ -68,13 +68,13 @@ module Rpc = struct
     | Bidirectional_streaming of bidirectional_streaming
 
   let bidirectional_streaming ~(f : bidirectional_streaming) (reqd : H2.Reqd.t)
-      (decoder : Grpc.Message.decoder) =
+      (codec : Grpc.Message.codec) =
     (* Create an incoming string Lwt_stream.t and a function to push values onto the stream. *)
     let decoder_stream, decoder_push = Lwt_stream.create () in
     let body = H2.Reqd.request_body reqd in
 
     (* Pass the H2 body reader and the push function to grpc_recv_streaming. *)
-    Connection.grpc_recv_streaming body decoder_push decoder;
+    Connection.grpc_recv_streaming body decoder_push codec.decoder;
 
     (* Create outgoing string Lwt_stream.t and a function to push outgoing values onto the stream. *)
     let encoder_stream, encoder_push = Lwt_stream.create () in
@@ -82,7 +82,7 @@ module Rpc = struct
     (* Signal MVar for comms between receiving and sending. *)
     let status_mvar = Lwt_mvar.create_empty () in
     Lwt.async (fun () ->
-        Connection.grpc_send_streaming reqd encoder_stream status_mvar);
+        Connection.grpc_send_streaming reqd encoder_stream status_mvar codec);
     let* status =
       f decoder_stream (fun encoder -> encoder_push (Some encoder))
     in
@@ -90,7 +90,7 @@ module Rpc = struct
     Lwt_mvar.put status_mvar status
 
   let client_streaming ~(f : client_streaming) (reqd : H2.Reqd.t)
-      (decoder : Grpc.Message.decoder) : unit Lwt.t =
+      (codec : Grpc.Message.codec) : unit Lwt.t =
     bidirectional_streaming reqd
       ~f:(fun decoder_stream encoder_push ->
         let+ (status : Grpc.Status.t), (encoder : string option) =
@@ -98,7 +98,7 @@ module Rpc = struct
         in
         (match encoder with None -> () | Some encoder -> encoder_push encoder);
         status)
-      decoder
+      codec
 
   let server_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun decoder_stream encoder_push ->

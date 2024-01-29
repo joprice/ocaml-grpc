@@ -70,7 +70,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   match response.status with
   | `OK ->
       trailers_handler response.headers;
-      let result = handler write_body read_body codec.Grpc.Message.decoder in
+      let result = handler write_body read_body codec in
       let status =
         match Eio.Promise.is_resolved status with
         (* In case no grpc-status appears in headers or trailers. *)
@@ -84,18 +84,19 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
 
 module Rpc = struct
   type 'a handler =
-    H2.Body.Writer.t -> H2.Body.Reader.t -> Grpc.Message.decoder -> 'a
+    H2.Body.Writer.t -> H2.Body.Reader.t -> Grpc.Message.codec -> 'a
 
-  let bidirectional_streaming ~f write_body read_body decoder =
+  let bidirectional_streaming ~f write_body read_body
+      (codec : Grpc.Message.codec) =
     let response_reader, response_writer = Seq.create_reader_writer () in
     let request_reader, request_writer = Seq.create_reader_writer () in
-    Connection.grpc_recv_streaming read_body response_writer decoder;
+    Connection.grpc_recv_streaming read_body response_writer codec.decoder;
     let res, res_notify = Eio.Promise.create () in
     Eio.Fiber.both
       (fun () ->
         Eio.Promise.resolve res_notify (f request_writer response_reader))
       (fun () ->
-        Connection.grpc_send_streaming_client write_body request_reader);
+        Connection.grpc_send_streaming_client write_body request_reader codec);
     Eio.Promise.await res
 
   let client_streaming ~f =

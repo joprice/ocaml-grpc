@@ -54,18 +54,22 @@ let gzip ?(level = 4) () : codec =
 let identity : codec =
   { name = "identity"; decoder = Result.ok; encoder = Result.ok }
 
-let make content =
+let make ~codec content =
   let content_len = String.length content in
   let payload = Bytes.create @@ (content_len + 1 + 4) in
   (* write compressed flag (uint8) *)
-  Bytes.set payload 0 '\x00';
+  let compressed = if codec.name = identity.name then '\x00' else '\x01' in
+  Bytes.set payload 0 compressed;
   (* write msg length (uint32 be) *)
   let length = String.length content in
   Bytes.set_uint16_be payload 1 (length lsr 16);
   Bytes.set_uint16_be payload 3 (length land 0xFFFF);
   (* write msg *)
   Bytes.blit_string content 0 payload 5 content_len;
-  Bytes.to_string payload
+  let payload = Bytes.to_string payload in
+  match codec.encoder payload with
+  | Ok payload -> payload
+  | Error error -> failwith error
 
 (** [extract_message buf] extracts the grpc message starting in [buf]
     in the buffer if there is one *)

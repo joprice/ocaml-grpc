@@ -2,7 +2,7 @@ type decoder = string -> (string, string) result
 type encoder = string -> (string, string) result
 type codec = { name : string; encoder : encoder; decoder : decoder }
 
-val make : string -> string
+val make : codec:codec -> string -> string
 (** [make s] encodes a string as a gRPC message. *)
 
 val extract : Buffer.t -> decoder -> string option

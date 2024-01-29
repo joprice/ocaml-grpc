@@ -1,6 +1,6 @@
 module ServiceMap = Map.Make (String)
 
-type service = H2.Reqd.t -> Grpc.Message.decoder -> unit
+type service = H2.Reqd.t -> Grpc.Message.codec -> unit
 type t = Grpc.Message.codec list * service ServiceMap.t
 
 (*  TODO: pass in *)
@@ -39,7 +39,7 @@ let handle_request (codecs, t) reqd =
       let service_name = List.nth parts (List.length parts - 2) in
       let service = ServiceMap.find_opt service_name t in
       match service with
-      | Some service -> service reqd codec.decoder
+      | Some service -> service reqd codec
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in
@@ -87,11 +87,11 @@ module Rpc = struct
     | Server_streaming of server_streaming
     | Bidirectional_streaming of bidirectional_streaming
 
-  let bidirectional_streaming ~f reqd decoder =
+  let bidirectional_streaming ~f reqd (codec : Grpc.Message.codec) =
     let body = H2.Reqd.request_body reqd in
     let request_reader, request_writer = Seq.create_reader_writer () in
     let response_reader, response_writer = Seq.create_reader_writer () in
-    Connection.grpc_recv_streaming body request_writer decoder;
+    Connection.grpc_recv_streaming body request_writer codec.decoder;
     let status_promise, status_notify = Eio.Promise.create () in
     Eio.Fiber.both
       (fun () ->
@@ -100,7 +100,9 @@ module Rpc = struct
         Seq.close_writer response_writer;
         Eio.Promise.resolve status_notify status)
       (fun () ->
-        try Connection.grpc_send_streaming reqd response_reader status_promise
+        try
+          Connection.grpc_send_streaming reqd response_reader status_promise
+            codec
         with exn ->
           (* https://github.com/anmonteiro/ocaml-h2/issues/175 *)
           Eio.traceln "%s" (Printexc.to_string exn))

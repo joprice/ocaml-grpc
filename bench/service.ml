@@ -6,10 +6,15 @@ let make_buffer capacity =
 
 let make_message len =
   Staged.stage @@ fun () ->
-  ignore (Grpc.Message.make (String.init len (fun _ -> 'a')))
+  ignore
+    (Grpc.Message.make ~codec:Grpc.Message.identity
+       (String.init len (fun _ -> 'a')))
 
 let extract_message len =
-  let msg = Grpc.Message.make (String.init len (fun _ -> 'a')) in
+  let msg =
+    Grpc.Message.make ~codec:Grpc.Message.identity
+      (String.init len (fun _ -> 'a'))
+  in
   let bs = Bigstringaf.of_string ~off:0 ~len msg in
   Staged.stage @@ fun () ->
   let buf = Grpc.Buffer.v () in

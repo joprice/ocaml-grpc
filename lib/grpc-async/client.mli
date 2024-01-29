@@ -4,7 +4,7 @@ module Rpc : sig
   type 'a handler =
     H2.Body.Writer.t ->
     H2.Body.Reader.t Deferred.t ->
-    Grpc.Message.decoder ->
+    Grpc.Message.codec ->
     'a Deferred.t
 
   val bidirectional_streaming :

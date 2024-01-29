@@ -1,9 +1,6 @@
 module Rpc : sig
   type 'a handler =
-    H2.Body.Writer.t ->
-    H2.Body.Reader.t Lwt.t ->
-    Grpc.Message.decoder ->
-    'a Lwt.t
+    H2.Body.Writer.t -> H2.Body.Reader.t Lwt.t -> Grpc.Message.codec -> 'a Lwt.t
 
   val bidirectional_streaming :
     f:((string option -> unit) -> string Lwt_stream.t -> 'a Lwt.t) -> 'a handler

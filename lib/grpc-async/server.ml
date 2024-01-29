@@ -1,7 +1,7 @@
 open! Async
 module ServiceMap = Map.Make (String)
 
-type service = H2.Reqd.t -> Grpc.Message.decoder -> unit
+type service = H2.Reqd.t -> Grpc.Message.codec -> unit
 type t = Grpc.Message.codec list * service ServiceMap.t
 
 let v ?(codecs = [ Grpc.Message.identity ]) () = (codecs, ServiceMap.empty)
@@ -22,7 +22,7 @@ let handle_request (_codecs, t) reqd =
       let service = ServiceMap.find_opt service_name t in
       match service with
       (* TODO: negotiate and pass in *)
-      | Some service -> service reqd Grpc.Message.identity.decoder
+      | Some service -> service reqd Grpc.Message.identity
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in
@@ -67,12 +67,12 @@ module Rpc = struct
     | Bidirectional_streaming of bidirectional_streaming
 
   let bidirectional_streaming ~(f : bidirectional_streaming) (reqd : H2.Reqd.t)
-      decoder : unit Deferred.t =
+      (codec : Grpc.Message.codec) : unit Deferred.t =
     let decoder_stream, decoder_push = Async.Pipe.create () in
     let body = H2.Reqd.request_body reqd in
 
     (* Pass the H2 body reader and the push function to grpc_recv_streaming. *)
-    Connection.grpc_recv_streaming body decoder_push decoder;
+    Connection.grpc_recv_streaming body decoder_push codec.decoder;
 
     (* Create outgoing string Pipe.t. *)
     let encoder_stream, encoder_push = Async.Pipe.create () in
@@ -81,7 +81,7 @@ module Rpc = struct
     let status_mvar = Async.Mvar.create () in
 
     don't_wait_for
-      (Connection.grpc_send_streaming reqd encoder_stream status_mvar);
+      (Connection.grpc_send_streaming reqd encoder_stream status_mvar codec);
     let%bind status = f decoder_stream encoder_push in
     if not (Pipe.is_closed encoder_push) then Pipe.close encoder_push;
     if not (Pipe.is_closed decoder_push) then Pipe.close decoder_push;
